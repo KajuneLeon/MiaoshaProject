@@ -1,0 +1,20 @@
+server:
+  port: 8090
+
+#  mybatis配置
+mybatis:
+  mapper-locations: classpath:mybatis/mapper/*.xml
+
+spring:
+  datasource:
+    name: miaosha
+    url: jdbc:mysql://127.0.0.1:3306/miaosha
+    username: root
+    password: 123456
+    type: com.alibaba.druid.pool.DruidDataSource
+    driver-class-name: com.mysql.jdbc.Driver
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
