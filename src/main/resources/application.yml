@@ -1,5 +1,13 @@
 server:
   port: 8090
+  tomcat:
+    accept-count: 2000
+    max-threads: 800
+    min-spare-threads: 100
+    accesslog:
+      enabled: true
+      directory: /var/www/miaosha/tomcat
+      pattern: "%h %l %u %t '%r' %s %b %D"
 
 #  mybatis配置
 mybatis:
@@ -18,3 +26,13 @@ spring:
   web:
     resources:
       add-mappings: false
+  redis:
+    host: 192.168.29.129
+    port: 6379
+    database: 10
+    # jedis连接池
+    jedis:
+      pool:
+        max-active: 50
+        min-idle: 20
+

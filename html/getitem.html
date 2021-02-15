@@ -4,6 +4,7 @@
         <meta charset="UTF-8">
         <title>getitem</title>
         <script src="js/jquery-1.11.0.min.js" type="text/javascript"></script>
+        <script src="gethost.js" type="text/javascript"></script>
         <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css"/>
         <link href="css/components.css" rel="stylesheet" type="text/css"/>
         <link href="css/login.css" rel="stylesheet" type="text/css"/>
@@ -81,10 +82,16 @@
         jQuery(document).ready(function () {
             //下单
             $("#createorder").on("click", function () {
+                var token = window.localStorage["token"];
+                if(token == null) {
+                    alert("没有登录，不能下单");
+                    window.location.href="login.html";
+                    return false;
+                }
                 $.ajax({
                     type: "POST",
                     contentType: "application/x-www-form-urlencoded",
-                    url: "http://localhost:8090/order/createorder",
+                    url: "http://"+g_host+"/order/createorder?token="+token,
                     data:{
                         "itemId":g_itemVO.id,
                         "amount":1,
@@ -112,7 +119,7 @@
             //获取商品详情
             $.ajax({
                 type: "GET",
-                url: "http://localhost:8090/item/get",
+                url: "http://"+g_host+"/item/get",
                 data:{
                     "id":getParam("id")
                 },

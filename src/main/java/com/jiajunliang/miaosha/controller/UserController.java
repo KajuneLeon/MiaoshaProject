@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.tomcat.util.security.MD5Encoder;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
@@ -20,11 +21,9 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
+import java.util.*;
 import java.util.Base64.Encoder;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @project: MiaoshaProject
@@ -51,6 +50,9 @@ public class UserController extends BaseController {
     @Autowired
     private HttpServletRequest httpServletRequest;
 
+    @Autowired
+    private RedisTemplate redisTemplate;
+
 
     //用户登录接口
     @RequestMapping(value = "/login", method = {RequestMethod.POST}, consumes = {CONTENT_TYPE_FORM})
@@ -65,11 +67,19 @@ public class UserController extends BaseController {
         //用户登录服务，校验登录是否合法
         UserModel userModel = userService.validateLogin(telphone,encodeByMd5(password));
 
-        //将登录凭证加入到用户登陆成功的session内
-        httpServletRequest.getSession().setAttribute("IS_LOGIN",true);
-        httpServletRequest.getSession().setAttribute("LOGIN_USER", userModel);
+        //将登录凭证加入到用户登陆成功的session内 - Cookie方式
+        //httpServletRequest.getSession().setAttribute("IS_LOGIN",true);
+        //httpServletRequest.getSession().setAttribute("LOGIN_USER", userModel);
 
-        return CommonReturnType.create(null);
+        //从cookie方式修改为token方式：用户登录验证成功后，将对应的登录信息和登录凭证一起存入redis中
+        //生成登录凭证token - UUID
+        String uuidToken = UUID.randomUUID().toString();
+        uuidToken.replace("-","");
+        //建立token与用户登录态之间的联系
+        redisTemplate.opsForValue().set(uuidToken, userModel);
+        redisTemplate.expire(uuidToken,1, TimeUnit.HOURS);
+        //下发token
+        return CommonReturnType.create(uuidToken);
     }
 
 
