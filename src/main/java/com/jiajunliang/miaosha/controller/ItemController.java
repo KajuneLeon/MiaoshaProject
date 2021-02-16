@@ -4,6 +4,7 @@ import com.alibaba.druid.sql.ast.expr.SQLCaseExpr;
 import com.jiajunliang.miaosha.controller.viewobject.ItemVO;
 import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.response.CommonReturnType;
+import com.jiajunliang.miaosha.service.CacheService;
 import com.jiajunliang.miaosha.service.ItemService;
 import com.jiajunliang.miaosha.service.model.ItemModel;
 import org.apache.ibatis.annotations.Param;
@@ -14,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
+import sun.misc.Cache;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -37,6 +39,9 @@ public class ItemController extends BaseController {
 
     @Autowired
     private RedisTemplate redisTemplate;
+
+    @Autowired
+    private CacheService cacheService;
 
     //创建商品的controller
     @RequestMapping(value = "/create", method = {RequestMethod.POST}, consumes = {CONTENT_TYPE_FORM})
@@ -63,21 +68,30 @@ public class ItemController extends BaseController {
     @RequestMapping(value = "/get", method = {RequestMethod.GET})
     @ResponseBody
     public CommonReturnType getItem(@RequestParam(name = "id") Integer id){
-        //redis缓存接入
-        //根据商品的id到redis内获取
-        ItemModel itemModel = (ItemModel) redisTemplate.opsForValue().get("item_"+id);
 
-        if(itemModel == null) {
-            //若redis内不存在对应的itemModel，则访问下游service
-            itemModel = itemService.getItemById(id);
-            //保存itemModel到redis内
-            redisTemplate.opsForValue().set("item_"+id, itemModel);
-            redisTemplate.expire("item_"+id,10, TimeUnit.MINUTES);
+        ItemModel itemModel = null;
+
+        //先取本地缓存
+        itemModel = (ItemModel) cacheService.getFromCommonCache("item_"+id);
+
+        if(itemModel == null){
+            //redis缓存接入
+            //根据商品的id到redis内获取
+            itemModel = (ItemModel) redisTemplate.opsForValue().get("item_"+id);
+
+            if(itemModel == null) {
+                //若redis内不存在对应的itemModel，则访问下游数据库service
+                itemModel = itemService.getItemById(id);
+                //保存itemModel到redis内
+                redisTemplate.opsForValue().set("item_"+id, itemModel);
+                redisTemplate.expire("item_"+id,10, TimeUnit.MINUTES);
+            }
+            //填充本地缓存
+            cacheService.setCommonCache("item_"+id, itemModel);
         }
 
         ItemVO itemVO = this.convertVOFromModel(itemModel);
         return CommonReturnType.create(itemVO);
-
     }
 
     //商品列表页面浏览
