@@ -5,6 +5,7 @@ import lombok.Data;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
+import java.io.Serializable;
 import java.math.BigDecimal;
 
 /**
@@ -15,7 +16,7 @@ import java.math.BigDecimal;
  * @create: 2021-01-31 00:13
  **/
 @Data
-public class ItemModel {
+public class ItemModel implements Serializable {
     private Integer id;
     //商品名
     @NotBlank(message = "商品名称不能为空")

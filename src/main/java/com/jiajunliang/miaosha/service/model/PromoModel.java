@@ -3,6 +3,7 @@ package com.jiajunliang.miaosha.service.model;
 import lombok.Data;
 import org.joda.time.DateTime;
 
+import java.io.Serializable;
 import java.math.BigDecimal;
 
 
@@ -14,7 +15,7 @@ import java.math.BigDecimal;
  * @create: 2021-02-06 20:30
  **/
 @Data
-public class PromoModel {
+public class PromoModel implements Serializable {
 
     //秒杀活动状态：1-未开始，2-进行中，3-已结束
     private Integer status;
