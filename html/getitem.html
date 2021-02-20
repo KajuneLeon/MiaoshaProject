@@ -64,6 +64,9 @@
                 </button>
             </div>
         </div>
+
+        <input type="hidden" id="isInit" value="0"/>
+
     </body>
 
     <script>
@@ -78,6 +81,45 @@
         }
 
         var g_itemVO = {};
+
+        function hasInit() {
+            var isInit = $("#isInit").val();
+            return isInit;
+        }
+
+        function setHasInit() {
+            $("#isInit").val("1");
+        }
+
+        function initView() {
+            var isInit = hasInit();
+            if(isInit == "1") {
+                return;
+            }
+            //获取商品详情
+            $.ajax({
+                type: "GET",
+                url: "http://"+g_host+"/item/get",
+                data:{
+                    "id":getParam("id")
+                },
+                xhrFields:{withCredentials:true},
+                success:function (data) {
+                    if(data.status == "success"){
+                        g_itemVO = data.data;
+                        reloadDom();
+                        setInterval(reloadDom, 1000);
+                        setHasInit();
+                    }
+                    else {
+                        alert("获取信息失败，原因为"+data.data.errMsg);
+                    }
+                },
+                error:function (data) {
+                    alert("获取信息失败，原因为"+data.responseText);
+                }
+            });
+        }
 
         jQuery(document).ready(function () {
             //下单
@@ -115,29 +157,7 @@
                     }
                 })
             });
-
-            //获取商品详情
-            $.ajax({
-                type: "GET",
-                url: "http://"+g_host+"/item/get",
-                data:{
-                    "id":getParam("id")
-                },
-                xhrFields:{withCredentials:true},
-                success:function (data) {
-                    if(data.status == "success"){
-                        g_itemVO = data.data;
-                        reloadDom();
-                        setInterval(reloadDom, 1000);
-                    }
-                    else {
-                        alert("获取信息失败，原因为"+data.data.errMsg);
-                    }
-                },
-                error:function (data) {
-                    alert("获取信息失败，原因为"+data.responseText);
-                }
-            });
+            initView();
         });
 
         function reloadDom() {

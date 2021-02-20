@@ -13,8 +13,11 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * @project: MiaoshaProject
@@ -34,6 +37,9 @@ public class UserServiceImpl implements UserService{
 
     @Autowired
     private ValidatorImpl validator;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     /**
      * 返回UserModel的原因：service层不可以简单把数据库的映射（即数据库映射的UserDO等类）透传返回给想要service的服务，
@@ -108,6 +114,17 @@ public class UserServiceImpl implements UserService{
             throw new BusinessException(EmBusinessError.USER_LOGIN_FAIL);
         }
 
+        return userModel;
+    }
+
+    @Override
+    public UserModel getUserByIdInCache(Integer id) {
+        UserModel userModel = (UserModel) redisTemplate.opsForValue().get("user_validate_"+id);
+        if (userModel == null) {
+            userModel = this.getUserById(id);
+            redisTemplate.opsForValue().set("user_validate_"+id, userModel);
+            redisTemplate.expire("user_validate_"+id, 10, TimeUnit.MINUTES);
+        }
         return userModel;
     }
 
