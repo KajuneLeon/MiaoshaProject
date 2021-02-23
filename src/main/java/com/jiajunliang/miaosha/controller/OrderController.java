@@ -69,6 +69,11 @@ public class OrderController extends BaseController {
 
         //OrderModel orderModel = orderService.createOrder(userModel.getId(), itemId, promoId, amount);
 
+        //判断库存是否已售罄，若对应的售罄key存在，则直接放回下单失败
+        if(redisTemplate.hasKey("promo_item_stock_invalid_" + itemId)){
+            throw new BusinessException(EmBusinessError.STOCK_NOT_ENOUGH);
+        }
+
         //加入一条init状态的库存流水，用于追踪异步扣减库存的消息
         String stockLogId = itemService.initStockLog(itemId, amount);
 
