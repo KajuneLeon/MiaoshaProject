@@ -2,8 +2,10 @@ package com.jiajunliang.miaosha.service;
 
 import com.jiajunliang.miaosha.dao.ItemDOMapper;
 import com.jiajunliang.miaosha.dao.ItemStockDOMapper;
+import com.jiajunliang.miaosha.dao.StockLogDOMapper;
 import com.jiajunliang.miaosha.dataobject.ItemDO;
 import com.jiajunliang.miaosha.dataobject.ItemStockDO;
+import com.jiajunliang.miaosha.dataobject.StockLogDO;
 import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.error.EmBusinessError;
 import com.jiajunliang.miaosha.mq.MqProducer;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -48,6 +51,9 @@ public class ItemServiceImpl implements ItemService{
 
     @Autowired
     private MqProducer mqProducer;
+
+    @Autowired
+    private StockLogDOMapper stockLogDOMapper;
 
     private ItemDO convertItemDOFromItemModel(ItemModel itemModel){
         if(itemModel == null) {
@@ -173,6 +179,20 @@ public class ItemServiceImpl implements ItemService{
             redisTemplate.expire("item_validate_"+id,10,TimeUnit.MINUTES);
         }
         return itemModel;
+    }
+
+    //初始化对应的库存流水
+    @Override
+    @Transactional
+    public String initStockLog(Integer itemId, Integer amount) {
+        StockLogDO stockLogDO = new StockLogDO();
+        stockLogDO.setItemId(itemId);
+        stockLogDO.setAmount(amount);
+        stockLogDO.setStockLogId(UUID.randomUUID().toString().replace("-",""));
+        stockLogDO.setStatus(1);
+        stockLogDOMapper.insertSelective(stockLogDO);
+
+        return stockLogDO.getStockLogId();
     }
 
 

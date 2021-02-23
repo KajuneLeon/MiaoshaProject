@@ -2,8 +2,10 @@ package com.jiajunliang.miaosha.service;
 
 import com.jiajunliang.miaosha.dao.OrderDOMapper;
 import com.jiajunliang.miaosha.dao.SequenceDOMapper;
+import com.jiajunliang.miaosha.dao.StockLogDOMapper;
 import com.jiajunliang.miaosha.dataobject.OrderDO;
 import com.jiajunliang.miaosha.dataobject.SequenceDO;
+import com.jiajunliang.miaosha.dataobject.StockLogDO;
 import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.error.EmBusinessError;
 import com.jiajunliang.miaosha.service.model.ItemModel;
@@ -46,9 +48,12 @@ public class OrderServiceImpl implements OrderService{
     @Autowired
     private SequenceDOMapper sequenceDOMapper;
 
+    @Autowired
+    private StockLogDOMapper stockLogDOMapper;
+
     @Override
     @Transactional
-    public OrderModel createOrder(Integer userId, Integer itemId, Integer promoId, Integer amount) throws BusinessException {
+    public OrderModel createOrder(Integer userId, Integer itemId, Integer promoId, Integer amount, String stockLogId) throws BusinessException {
         //校验下单状态：下单商品是否存在，用户是否合法，数量是否正确
 //        ItemModel itemModel = itemService.getItemById(itemId);
         ItemModel itemModel = itemService.getItemByIdInCache(itemId);
@@ -127,6 +132,17 @@ public class OrderServiceImpl implements OrderService{
 //                }
 //            }
 //        });
+
+        //虽然此处增加了数据库操作，但库存流水操作基于stockLogId进行，而每次请求的stockLogId均不同，
+        //因此数据库行锁是加在不同行上的，不存在并发锁竞争，相比于直接扣减数据库库存（存在并发锁竞争），对数据压力较小；
+
+        //设置库存流水状态为成功
+        StockLogDO stockLogDO = stockLogDOMapper.selectByPrimaryKey(stockLogId);
+        if(stockLogDO == null) {
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR);
+        }
+        stockLogDO.setStatus(2);
+        stockLogDOMapper.updateByPrimaryKeySelective(stockLogDO);
 
         //返回前端
         return orderModel;

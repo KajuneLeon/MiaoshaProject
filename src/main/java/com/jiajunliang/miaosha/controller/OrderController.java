@@ -4,6 +4,7 @@ import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.error.EmBusinessError;
 import com.jiajunliang.miaosha.mq.MqProducer;
 import com.jiajunliang.miaosha.response.CommonReturnType;
+import com.jiajunliang.miaosha.service.ItemService;
 import com.jiajunliang.miaosha.service.OrderService;
 import com.jiajunliang.miaosha.service.model.OrderModel;
 import com.jiajunliang.miaosha.service.model.UserModel;
@@ -40,6 +41,9 @@ public class OrderController extends BaseController {
     @Autowired
     private MqProducer mqProducer;
 
+    @Autowired
+    private ItemService itemService;
+
     //封装下单请求
     @RequestMapping(value = "/createorder", method = {RequestMethod.POST}, consumes = {CONTENT_TYPE_FORM})
     @ResponseBody
@@ -65,8 +69,11 @@ public class OrderController extends BaseController {
 
         //OrderModel orderModel = orderService.createOrder(userModel.getId(), itemId, promoId, amount);
 
+        //加入一条init状态的库存流水，用于追踪异步扣减库存的消息
+        String stockLogId = itemService.initStockLog(itemId, amount);
+
         //发送事务型消息，由事务型消息驱动创建订单，根据回调状态确定消息发送状态
-        if(!mqProducer.transactionAsyncReduceStock(userModel.getId(), itemId, promoId, amount)){
+        if(!mqProducer.transactionAsyncReduceStock(userModel.getId(), itemId, promoId, amount, stockLogId)){
             throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"下单失败");
         }
         return CommonReturnType.create(null);

@@ -1,6 +1,8 @@
 package com.jiajunliang.miaosha.mq;
 
 import com.alibaba.fastjson.JSON;
+import com.jiajunliang.miaosha.dao.StockLogDOMapper;
+import com.jiajunliang.miaosha.dataobject.StockLogDO;
 import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.service.OrderService;
 import org.apache.rocketmq.client.exception.MQBrokerException;
@@ -14,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
+import javax.xml.stream.Location;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
@@ -41,6 +44,9 @@ public class MqProducer {
     @Autowired
     private OrderService orderService;
 
+    @Autowired
+    private StockLogDOMapper stockLogDOMapper;
+
     @PostConstruct
     public void init() throws MQClientException {
         //做mq producer的初始化
@@ -62,11 +68,18 @@ public class MqProducer {
                 Integer itemId = (Integer) ((Map)arg).get("itemId");
                 Integer promoId = (Integer) ((Map)arg).get("promoId");
                 Integer amount = (Integer) ((Map)arg).get("amount");
+                String stockLogId = (String) ((Map)arg).get("stockLogId");
                 try {
                     //真正调用createOrder
-                    orderService.createOrder(userId, itemId, promoId, amount);
+                    orderService.createOrder(userId, itemId, promoId, amount, stockLogId);
+                    //存在问题：createOrder调用可能成功或失败，但下面的代码执行失败 / createOrder未执行完而定期调用了checkLocalTransaction
+                    //解决：在定期回调的checkLocalTransaction(MessageExt msg)方法中检库存流水状态，并据此发送LocalTransactionState
                 } catch (BusinessException e) {
                     e.printStackTrace();
+                    //设置stockLog为回滚状态
+                    StockLogDO stockLogDO = stockLogDOMapper.selectByPrimaryKey(stockLogId);
+                    stockLogDO.setStatus(3);
+                    stockLogDOMapper.updateByPrimaryKeySelective(stockLogDO);
                     return LocalTransactionState.ROLLBACK_MESSAGE;
                 }
                 return LocalTransactionState.COMMIT_MESSAGE;
@@ -80,24 +93,35 @@ public class MqProducer {
                 Map<String, Object> map = JSON.parseObject(jsonString, Map.class);
                 Integer itemId = (Integer) map.get("itemId");
                 Integer amount = (Integer) map.get("amount");
-
-                return null;
+                String stockLogId = (String) map.get("stockLogId");
+                StockLogDO stockLogDO = stockLogDOMapper.selectByPrimaryKey(stockLogId);
+                if(stockLogDO == null) {
+                    return LocalTransactionState.UNKNOW;
+                }
+                if(stockLogDO.getStatus().intValue() == 2) {
+                    return LocalTransactionState.COMMIT_MESSAGE;
+                } else if(stockLogDO.getStatus().intValue() == 1) {
+                    return LocalTransactionState.UNKNOW;
+                }
+                return LocalTransactionState.ROLLBACK_MESSAGE;
             }
         });
     }
 
     //事务型同步库存扣减消息
     //事务型-数据库事务提交成功时，对应消息必定发送成功，数据库事务回滚，消息必定不发送，数据库事务状态为止，消息pending（处理中）等待最后结果
-    public boolean transactionAsyncReduceStock(Integer userId, Integer itemId, Integer promoId, Integer amount) {
+    public boolean transactionAsyncReduceStock(Integer userId, Integer itemId, Integer promoId, Integer amount, String stockLogId) {
         Map<String, Object> bodyMap = new HashMap<>();
         bodyMap.put("itemId", itemId);
         bodyMap.put("amount", amount);
+        bodyMap.put("stockLogId", stockLogId);
 
         Map<String, Object> argsMap = new HashMap<>();
         argsMap.put("itemId", itemId);
         argsMap.put("amount", amount);
         argsMap.put("userId", userId);
         argsMap.put("promoId", promoId);
+        argsMap.put("stockLogId", stockLogId);
 
         Message message = new Message(topicName, "increase",
                 JSON.toJSON(bodyMap).toString().getBytes(Charset.forName("UTF-8")));
