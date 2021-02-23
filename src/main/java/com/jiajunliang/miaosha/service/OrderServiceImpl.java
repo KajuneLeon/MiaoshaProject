@@ -9,12 +9,15 @@ import com.jiajunliang.miaosha.error.EmBusinessError;
 import com.jiajunliang.miaosha.service.model.ItemModel;
 import com.jiajunliang.miaosha.service.model.OrderModel;
 import com.jiajunliang.miaosha.service.model.UserModel;
+import org.apache.ibatis.transaction.Transaction;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -109,6 +112,21 @@ public class OrderServiceImpl implements OrderService{
 
         //商品销量增加
         itemService.increaseSales(itemId, amount);
+
+        //Spring Transaction提供方法：整个事务成功提交后，再执行某个方法
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+            //在最近的一个@Transactional注解事务被成功提交后执行afterCommit()
+            @Override
+            public void afterCommit() {
+                //异步更新库存
+                boolean mqResult = itemService.asyncDecreaseStock(itemId, amount);
+                //但此时异步消息发送失败时，没有机会回滚redis库存
+//                if(!mqResult) {
+//                    itemService.increaseStock(itemId, amount);
+//                    throw new BusinessException(EmBusinessError.MQ_SEND_FAIL);
+//                }
+            }
+        });
 
         //返回前端
         return orderModel;

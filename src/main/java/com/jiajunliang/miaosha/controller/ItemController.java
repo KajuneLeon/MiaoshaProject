@@ -6,6 +6,7 @@ import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.response.CommonReturnType;
 import com.jiajunliang.miaosha.service.CacheService;
 import com.jiajunliang.miaosha.service.ItemService;
+import com.jiajunliang.miaosha.service.PromoService;
 import com.jiajunliang.miaosha.service.model.ItemModel;
 import org.apache.ibatis.annotations.Param;
 import org.joda.time.format.DateTimeFormat;
@@ -42,6 +43,9 @@ public class ItemController extends BaseController {
 
     @Autowired
     private CacheService cacheService;
+
+    @Autowired
+    private PromoService promoService;
 
     //创建商品的controller
     @RequestMapping(value = "/create", method = {RequestMethod.POST}, consumes = {CONTENT_TYPE_FORM})
@@ -106,6 +110,14 @@ public class ItemController extends BaseController {
             return itemVO;
         }).collect(Collectors.toList());
         return CommonReturnType.create(itemVOList);
+    }
+
+    //发布活动
+    @RequestMapping(value = "/publishpromo", method = {RequestMethod.GET})
+    @ResponseBody
+    public CommonReturnType publishPromo(@RequestParam(name = "id") Integer id) {
+        promoService.publishPromo(id);
+        return CommonReturnType.create(null);
     }
 
 

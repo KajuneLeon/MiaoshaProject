@@ -36,3 +36,9 @@ spring:
         max-active: 50
         min-idle: 20
 
+mq:
+  nameserver:
+    addr: 47.119.122.103:9876
+  topicname: stock
+
+

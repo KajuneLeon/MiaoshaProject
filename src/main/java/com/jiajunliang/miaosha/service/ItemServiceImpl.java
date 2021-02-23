@@ -6,6 +6,7 @@ import com.jiajunliang.miaosha.dataobject.ItemDO;
 import com.jiajunliang.miaosha.dataobject.ItemStockDO;
 import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.error.EmBusinessError;
+import com.jiajunliang.miaosha.mq.MqProducer;
 import com.jiajunliang.miaosha.service.model.ItemModel;
 import com.jiajunliang.miaosha.service.model.PromoModel;
 import com.jiajunliang.miaosha.validator.ValidationResult;
@@ -44,6 +45,9 @@ public class ItemServiceImpl implements ItemService{
 
     @Autowired
     private RedisTemplate redisTemplate;
+
+    @Autowired
+    private MqProducer mqProducer;
 
     private ItemDO convertItemDOFromItemModel(ItemModel itemModel){
         if(itemModel == null) {
@@ -122,15 +126,36 @@ public class ItemServiceImpl implements ItemService{
 
     @Override
     @Transactional
-    public boolean decreaseStock(Integer itemId, Integer amount) throws BusinessException {
-        int affectedRow = itemStockDOMapper.decreaseStock(itemId, amount);
-        if(affectedRow > 0) {
+    public boolean decreaseStock(Integer itemId, Integer amount){
+        //int affectedRow = itemStockDOMapper.decreaseStock(itemId, amount);
+        Long result = redisTemplate.opsForValue().increment("promo_item_stock_" + itemId, amount.intValue() * -1);
+        if(result >= 0) {
             //更新库存成功
+            //移至asyncDecreaseStock()
+//            boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
+//            if(!mqResult) {
+//                //若mq推送消息失败，redis恢复库存，返回false，表示扣减失败
+//                redisTemplate.opsForValue().increment("promo_item_stock_" + itemId, amount.intValue());
+//                return false;
+//            }
             return true;
         } else {
-            //更新库存失败
+            //更新库存失败，redis库存补回
+            increaseStock(itemId, amount);
             return false;
         }
+    }
+
+    @Override
+    public boolean increaseStock(Integer itemId, Integer amount){
+        redisTemplate.opsForValue().increment("promo_item_stock_" + itemId, amount.intValue());
+        return true;
+    }
+
+    @Override
+    public boolean asyncDecreaseStock(Integer itemId, Integer amount) {
+        boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
+        return mqResult;
     }
 
     @Override
