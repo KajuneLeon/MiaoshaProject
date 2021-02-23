@@ -2,6 +2,7 @@ package com.jiajunliang.miaosha.controller;
 
 import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.error.EmBusinessError;
+import com.jiajunliang.miaosha.mq.MqProducer;
 import com.jiajunliang.miaosha.response.CommonReturnType;
 import com.jiajunliang.miaosha.service.OrderService;
 import com.jiajunliang.miaosha.service.model.OrderModel;
@@ -36,6 +37,9 @@ public class OrderController extends BaseController {
     @Autowired
     private RedisTemplate redisTemplate;
 
+    @Autowired
+    private MqProducer mqProducer;
+
     //封装下单请求
     @RequestMapping(value = "/createorder", method = {RequestMethod.POST}, consumes = {CONTENT_TYPE_FORM})
     @ResponseBody
@@ -59,8 +63,12 @@ public class OrderController extends BaseController {
             throw new BusinessException(EmBusinessError.USER_NOT_LOGIN, "用户未登录，不能下单");
         }
 
-        OrderModel orderModel = orderService.createOrder(userModel.getId(), itemId, promoId, amount);
+        //OrderModel orderModel = orderService.createOrder(userModel.getId(), itemId, promoId, amount);
 
+        //发送事务型消息，由事务型消息驱动创建订单，根据回调状态确定消息发送状态
+        if(!mqProducer.transactionAsyncReduceStock(userModel.getId(), itemId, promoId, amount)){
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"下单失败");
+        }
         return CommonReturnType.create(null);
     }
 }
