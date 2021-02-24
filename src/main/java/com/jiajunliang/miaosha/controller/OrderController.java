@@ -15,7 +15,9 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
+import java.util.concurrent.*;
 
 /**
  * @project: MiaoshaProject
@@ -47,6 +49,13 @@ public class OrderController extends BaseController {
 
     @Autowired
     private PromoService promoService;
+
+    private ExecutorService executorService;
+
+    @PostConstruct
+    public void init() {
+        executorService = Executors.newFixedThreadPool(20);
+    }
 
 
     //封装下单请求
@@ -81,13 +90,27 @@ public class OrderController extends BaseController {
             throw new BusinessException(EmBusinessError.STOCK_NOT_ENOUGH);
         }
 
-        //加入一条init状态的库存流水，用于追踪异步扣减库存的消息
-        String stockLogId = itemService.initStockLog(itemId, amount);
+        //队列泄洪：同步调用线程池的submit方法
+        //拥塞窗口为20的等待队列，用于队列化泄洪
+        Future<Object> future = executorService.submit(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                //加入一条init状态的库存流水，用于追踪异步扣减库存的消息
+                String stockLogId = itemService.initStockLog(itemId, amount);
+                //发送事务型消息，由事务型消息驱动创建订单，根据回调状态确定消息发送状态
+                if(!mqProducer.transactionAsyncReduceStock(userModel.getId(), itemId, promoId, amount, stockLogId)){
+                    throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"下单失败");
+                }
+                return null;
+            }
+        });
 
-        //发送事务型消息，由事务型消息驱动创建订单，根据回调状态确定消息发送状态
-        if(!mqProducer.transactionAsyncReduceStock(userModel.getId(), itemId, promoId, amount, stockLogId)){
-            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"下单失败");
+        try {
+            future.get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR);
         }
+
         return CommonReturnType.create(null);
     }
 
@@ -96,14 +119,23 @@ public class OrderController extends BaseController {
     @ResponseBody
     public CommonReturnType generateToken(@RequestParam(name = "itemId") Integer itemId,
                                           @RequestParam(name = "promoId") Integer promoId) throws BusinessException {
+        //判断登录信息
         String token = httpServletRequest.getParameterMap().get("token")[0];
         if(StringUtils.isEmpty(token)) {
             throw new BusinessException(EmBusinessError.USER_NOT_LOGIN, "用户未登录，不能下单");
         }
+        //判断用户信息
         UserModel userModel = (UserModel) redisTemplate.opsForValue().get(token);
         if(userModel == null) {
             throw new BusinessException(EmBusinessError.USER_NOT_LOGIN, "用户未登录，不能下单");
         }
+
+        //获取秒杀大闸的count数量
+        long result = redisTemplate.opsForValue().increment("promo_door_count_" + promoId, -1);
+        if(result < 0) {
+            return null;
+        }
+
         //获取秒杀访问令牌
         String promoToken = promoService.generateSecondKillToken(promoId, itemId, userModel.getId());
 

@@ -70,10 +70,19 @@ public class PromoServiceImpl implements PromoService{
         ItemModel itemModel = itemService.getItemById(promoDO.getItemId());
         //数据库库存同步到redis
         redisTemplate.opsForValue().set("promo_item_stock_"+itemModel.getId(), itemModel.getStock());
+        //将秒杀大闸的限制数量设置到redis中
+        redisTemplate.opsForValue().set("promo_door_count_"+promoId, itemModel.getStock().intValue() * 5);
+
     }
 
     @Override
     public String generateSecondKillToken(Integer promoId, Integer itemId, Integer userId) {
+
+        //判断库存是否已售罄，若对应的售罄key存在，则直接放回下单失败
+        if(redisTemplate.hasKey("promo_item_stock_invalid_" + itemId)){
+            return null;
+        }
+
         PromoDO promoDO = promoDOMapper.selectByPrimaryKey(promoId);
         PromoModel promoModel = convertFromDataObject(promoDO);
         if(promoModel == null) {
