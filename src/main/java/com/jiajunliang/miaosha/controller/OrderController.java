@@ -1,5 +1,6 @@
 package com.jiajunliang.miaosha.controller;
 
+import com.google.common.util.concurrent.RateLimiter;
 import com.jiajunliang.miaosha.error.BusinessException;
 import com.jiajunliang.miaosha.error.EmBusinessError;
 import com.jiajunliang.miaosha.mq.MqProducer;
@@ -9,6 +10,7 @@ import com.jiajunliang.miaosha.service.OrderService;
 import com.jiajunliang.miaosha.service.PromoService;
 import com.jiajunliang.miaosha.service.model.OrderModel;
 import com.jiajunliang.miaosha.service.model.UserModel;
+import com.jiajunliang.miaosha.util.CodeUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -16,7 +18,12 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.PostConstruct;
+import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.awt.image.RenderedImage;
+import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.*;
 
 /**
@@ -52,9 +59,33 @@ public class OrderController extends BaseController {
 
     private ExecutorService executorService;
 
+    private RateLimiter orderCreateRateLimiter;
+
     @PostConstruct
     public void init() {
         executorService = Executors.newFixedThreadPool(20);
+        orderCreateRateLimiter = RateLimiter.create(350);
+    }
+
+    //生成验证码
+    @RequestMapping(value = "/generateverifycode", method = {RequestMethod.GET, RequestMethod.POST})
+    @ResponseBody
+    public void generateVerifyCode(HttpServletResponse response) throws BusinessException, IOException {
+        String token = httpServletRequest.getParameterMap().get("token")[0];
+        if(StringUtils.isEmpty(token)) {
+            throw new BusinessException(EmBusinessError.USER_NOT_LOGIN, "用户未登录，不能生成验证码");
+        }
+        UserModel userModel = (UserModel) redisTemplate.opsForValue().get(token);
+        if(userModel == null) {
+            throw new BusinessException(EmBusinessError.USER_NOT_LOGIN, "用户未登录，不能生成验证码");
+        }
+        //生成验证码
+        Map<String,Object> map = CodeUtil.generateCodeAndPic();
+        //将验证码code与用户做绑定存入redis中
+        redisTemplate.opsForValue().set("verify_code_" + userModel.getId(), map.get("code"));
+        redisTemplate.expire("verify_code_" + userModel.getId(), 10, TimeUnit.MINUTES);
+        //将生成的验证码通过HttpResponse的输出流返回前端
+        ImageIO.write((RenderedImage) map.get("codePic"), "jpeg", response.getOutputStream());
     }
 
 
@@ -65,7 +96,6 @@ public class OrderController extends BaseController {
                                         @RequestParam(name = "amount") Integer amount,
                                         @RequestParam(name = "promoId", required = false) Integer promoId,
                                         @RequestParam(name = "promoToken", required = false) String promoToken) throws BusinessException {
-
 
         //使用token判断登录态,获取用户登录信息(token附于请求url的?参数后)
         String token = httpServletRequest.getParameterMap().get("token")[0];
@@ -118,7 +148,9 @@ public class OrderController extends BaseController {
     @RequestMapping(value = "/generatetoken", method = {RequestMethod.POST}, consumes = {CONTENT_TYPE_FORM})
     @ResponseBody
     public CommonReturnType generateToken(@RequestParam(name = "itemId") Integer itemId,
-                                          @RequestParam(name = "promoId") Integer promoId) throws BusinessException {
+                                          @RequestParam(name = "promoId") Integer promoId,
+                                          @RequestParam(name = "verifyCode") String verifyCode
+                                          ) throws BusinessException {
         //判断登录信息
         String token = httpServletRequest.getParameterMap().get("token")[0];
         if(StringUtils.isEmpty(token)) {
@@ -128,6 +160,15 @@ public class OrderController extends BaseController {
         UserModel userModel = (UserModel) redisTemplate.opsForValue().get(token);
         if(userModel == null) {
             throw new BusinessException(EmBusinessError.USER_NOT_LOGIN, "用户未登录，不能下单");
+        }
+
+        //通过verifyCode确定验证码的有效性
+        String redisVerifyCode = (String) redisTemplate.opsForValue().get("verify_code_" + userModel.getId());
+        if(StringUtils.isEmpty(redisVerifyCode)) {
+            throw new BusinessException(EmBusinessError.PARAMETER_VALIDATION_ERROR, "请求非法");
+        }
+        if(!redisVerifyCode.equalsIgnoreCase(verifyCode)){
+            throw new BusinessException(EmBusinessError.PARAMETER_VALIDATION_ERROR, "请求非法，验证码错误");
         }
 
         //获取秒杀大闸的count数量
