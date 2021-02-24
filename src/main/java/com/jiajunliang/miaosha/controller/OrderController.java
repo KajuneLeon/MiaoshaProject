@@ -64,7 +64,7 @@ public class OrderController extends BaseController {
     @PostConstruct
     public void init() {
         executorService = Executors.newFixedThreadPool(20);
-        orderCreateRateLimiter = RateLimiter.create(350);
+        orderCreateRateLimiter = RateLimiter.create(300);
     }
 
     //生成验证码
@@ -96,6 +96,11 @@ public class OrderController extends BaseController {
                                         @RequestParam(name = "amount") Integer amount,
                                         @RequestParam(name = "promoId", required = false) Integer promoId,
                                         @RequestParam(name = "promoToken", required = false) String promoToken) throws BusinessException {
+
+        //限流：尝试获取一个Guava RateLimiter的令牌，若获取失败就返回false
+        if(!orderCreateRateLimiter.tryAcquire()){
+            throw new BusinessException(EmBusinessError.RATE_LIMIT);
+        }
 
         //使用token判断登录态,获取用户登录信息(token附于请求url的?参数后)
         String token = httpServletRequest.getParameterMap().get("token")[0];
